@@ -14,6 +14,8 @@ from SPARQLWrapper import JSON, SPARQLWrapper
 from tqdm import tqdm
 from datetime import datetime, timezone
 
+from databusclient.version import __version__
+
 from databusclient.api.utils import (
     fetch_databus_jsonld,
     get_databus_id_parts_from_file_url,
@@ -40,6 +42,11 @@ COMPRESSION_MODULES = {
     "gz": gzip,
     "xz": lzma,
 }
+
+DEFAULT_USER_AGENT = (
+    f"databus-python-client/{__version__} "
+    "(https://github.com/dbpedia/databus-python-client)"
+)
 
 GRAPH_MODES = {"download-url"}
 
@@ -420,6 +427,7 @@ def _download_file(
     validate_checksum: bool = False,
     expected_checksum: str | None = None,
     manifest_context=None,
+    user_agent: str | None = None,
 ) -> None:
     """Download a file from the internet with a progress bar using tqdm.
 
@@ -437,6 +445,8 @@ def _download_file(
         base_uri: Base URI for CSV -> Triple conversion (Layer 3).
         graph_mode: Optional graph sidecar mode. Currently supports 'download-url'.
         validate_checksum: Whether to validate checksums after downloading.
+        user_agent: HTTP User-Agent for file HEAD and GET requests. None uses
+                    the versioned databus-python-client default.
         expected_checksum: The expected checksum of the file.
     """
     _validate_graph_mode(graph_mode)
@@ -454,10 +464,10 @@ def _download_file(
         os.makedirs(dirpath, exist_ok=True)  # Create the necessary directories
 
     # --- 1. Get redirect URL by requesting HEAD ---
-    headers = {}
+    headers = {"User-Agent": DEFAULT_USER_AGENT if user_agent is None else user_agent}
 
     # --- 1a. public databus ---
-    response = requests.head(url, timeout=30, allow_redirects=False)
+    response = requests.head(url, headers=headers, timeout=30, allow_redirects=False)
 
     # Check for redirect and update URL if necessary
     if response.headers.get("Location") and response.status_code in [
@@ -470,7 +480,7 @@ def _download_file(
         url = response.headers.get("Location")
         print("Redirects url: ", url)
         # Re-do HEAD request on redirect URL
-        response = requests.head(url, timeout=30)
+        response = requests.head(url, headers=headers, timeout=30)
 
     # Extract hostname from final URL (after redirect) to check if vault token needed.
     # This is the actual download location that may require authentication.
@@ -493,7 +503,7 @@ def _download_file(
                 raise DownloadAuthError(
                     "Databus API key not given for protected download"
                 )
-            headers = {"X-API-KEY": databus_key}
+            headers["X-API-KEY"] = databus_key
             response = requests.head(url, headers=headers, timeout=30)
 
     # --- 2. Try direct GET to redirected URL ---
@@ -866,6 +876,7 @@ def _download_files(
     manifest_context=None,
     validate_checksum: bool = False,
     checksums: dict | None = None,
+    user_agent: str | None = None,
 ) -> None:
     """Download multiple files from the databus.
 
@@ -882,6 +893,8 @@ def _download_files(
         base_uri: Base URI for CSV -> Triple conversion (Layer 3).
         graph_mode: Optional graph sidecar mode. Currently supports 'download-url'.
         validate_checksum: Whether to validate checksums after downloading.
+        user_agent: HTTP User-Agent for file HEAD and GET requests. None uses
+                    the versioned databus-python-client default.
         checksums: Dictionary mapping URLs to their expected checksums.
     """
     for url in urls:
@@ -903,6 +916,7 @@ def _download_files(
             validate_checksum=validate_checksum,
             expected_checksum=expected,
             manifest_context=manifest_context,
+            user_agent=user_agent,
         )
 
 
@@ -1054,6 +1068,7 @@ def _download_collection(
     graph_mode: str = None,
     manifest_context=None,
     validate_checksum: bool = False,
+    user_agent: str | None = None,
 ) -> None:
     """Download all files in a databus collection.
 
@@ -1071,6 +1086,8 @@ def _download_collection(
         base_uri: Base URI for CSV -> Triple conversion (Layer 3).
         graph_mode: Optional graph sidecar mode. Currently supports 'download-url'.
         validate_checksum: Whether to validate checksums after downloading.
+        user_agent: HTTP User-Agent for file HEAD and GET requests. None uses
+                    the versioned databus-python-client default.
     """
     query = _get_sparql_query_of_collection(uri, databus_key=databus_key)
     file_urls = _get_file_download_urls_from_sparql_query(
@@ -1097,6 +1114,7 @@ def _download_collection(
         manifest_context=manifest_context,
         validate_checksum=validate_checksum,
         checksums=checksums if checksums else None,
+        user_agent=user_agent,
     )
 
 
@@ -1114,6 +1132,7 @@ def _download_version(
     graph_mode: str = None,
     manifest_context=None,
     validate_checksum: bool = False,
+    user_agent: str | None = None,
 ) -> None:
     """Download all files in a databus artifact version.
 
@@ -1130,6 +1149,8 @@ def _download_version(
         base_uri: Base URI for CSV -> Triple conversion (Layer 3).
         graph_mode: Optional graph sidecar mode. Currently supports 'download-url'.
         validate_checksum: Whether to validate checksums after downloading.
+        user_agent: HTTP User-Agent for file HEAD and GET requests. None uses
+                    the versioned databus-python-client default.
     """
     json_str = fetch_databus_jsonld(uri, databus_key=databus_key)
     file_urls = _get_file_download_urls_from_artifact_jsonld(json_str)
@@ -1155,6 +1176,7 @@ def _download_version(
         manifest_context=manifest_context,
         validate_checksum=validate_checksum,
         checksums=checksums,
+        user_agent=user_agent,
     )
 
 
@@ -1173,6 +1195,7 @@ def _download_artifact(
     graph_mode: str = None,
     manifest_context=None,
     validate_checksum: bool = False,
+    user_agent: str | None = None,
 ) -> None:
     """Download files in a databus artifact.
 
@@ -1190,6 +1213,8 @@ def _download_artifact(
         base_uri: Base URI for CSV -> Triple conversion (Layer 3).
         graph_mode: Optional graph sidecar mode. Currently supports 'download-url'.
         validate_checksum: Whether to validate checksums after downloading.
+        user_agent: HTTP User-Agent for file HEAD and GET requests. None uses
+                    the versioned databus-python-client default.
     """
     json_str = fetch_databus_jsonld(uri, databus_key=databus_key)
     versions = _get_databus_versions_of_artifact(json_str, all_versions=all_versions)
@@ -1221,6 +1246,7 @@ def _download_artifact(
             manifest_context=manifest_context,
             validate_checksum=validate_checksum,
             checksums=checksums,
+            user_agent=user_agent,
         )
 
 
@@ -1300,6 +1326,7 @@ def _download_group(
     graph_mode: str = None,
     manifest_context=None,
     validate_checksum: bool = False,
+    user_agent: str | None = None,
 ) -> None:
     """Download files in a databus group.
 
@@ -1317,6 +1344,8 @@ def _download_group(
         base_uri: Base URI for CSV -> Triple conversion (Layer 3).
         graph_mode: Optional graph sidecar mode. Currently supports 'download-url'.
         validate_checksum: Whether to validate checksums after downloading.
+        user_agent: HTTP User-Agent for file HEAD and GET requests. None uses
+                    the versioned databus-python-client default.
     """
     json_str = fetch_databus_jsonld(uri, databus_key=databus_key)
     artifacts = _get_databus_artifacts_of_group(json_str)
@@ -1337,6 +1366,7 @@ def _download_group(
             graph_mode=graph_mode,
             manifest_context=manifest_context,
             validate_checksum=validate_checksum,
+            user_agent=user_agent,
         )
 
 
@@ -1390,6 +1420,7 @@ def download(
     graph_mode=None,
     validate_checksum: bool = False,
     manifest_context=None,
+    user_agent: str | None = None,
 ) -> None:
     """Download datasets from databus.
 
@@ -1410,6 +1441,8 @@ def download(
         base_uri: Base URI for CSV -> Triple conversion (Layer 3).
         graph_mode: Optional graph sidecar mode. Currently supports 'download-url'.
         validate_checksum: Whether to validate checksums after downloading.
+        user_agent: HTTP User-Agent for file HEAD and GET requests. None uses
+                    the versioned databus-python-client default.
     """
     _validate_graph_mode(graph_mode)
     for databusURI in databusURIs:
@@ -1442,6 +1475,7 @@ def download(
                     graph_mode=graph_mode,
                     manifest_context=manifest_context,
                     validate_checksum=validate_checksum,
+                    user_agent=user_agent,
                 )
             elif file is not None:
                 print(f"Downloading file: {databusURI}")
@@ -1468,6 +1502,7 @@ def download(
                     manifest_context=manifest_context,
                     validate_checksum=validate_checksum,
                     expected_checksum=expected,
+                    user_agent=user_agent,
                 )
             elif version is not None:
                 print(f"Downloading version: {databusURI}")
@@ -1485,6 +1520,7 @@ def download(
                     graph_mode=graph_mode,
                     manifest_context=manifest_context,
                     validate_checksum=validate_checksum,
+                    user_agent=user_agent,
                 )
             elif artifact is not None:
                 print(
@@ -1505,6 +1541,7 @@ def download(
                     graph_mode=graph_mode,
                     manifest_context=manifest_context,
                     validate_checksum=validate_checksum,
+                    user_agent=user_agent,
                 )
             elif group is not None and group != "collections":
                 print(
@@ -1525,6 +1562,7 @@ def download(
                     graph_mode=graph_mode,
                     manifest_context=manifest_context,
                     validate_checksum=validate_checksum,
+                    user_agent=user_agent,
                 )
             elif account is not None:
                 print("accountId not supported yet")  # TODO
@@ -1568,4 +1606,5 @@ def download(
                 manifest_context=manifest_context,
                 validate_checksum=validate_checksum,
                 checksums=checksums if checksums else None,
+                user_agent=user_agent,
             )

@@ -321,6 +321,10 @@ def deploy(
 @click.option(
     "--validate-checksum", is_flag=True, help="Validate checksums of downloaded files"
 )
+@click.option(
+    "--user-agent",
+    help="Override the HTTP User-Agent header for file download requests.",
+)
 def download(
     databusuris: List[str],
     localdir,
@@ -337,6 +341,7 @@ def download(
     graph_mode,
     validate_checksum,
     manifest_path,
+    user_agent,
 ):
     """
     Download datasets from databus, optionally using vault access if vault options are provided.
@@ -366,6 +371,7 @@ def download(
             "graph_mode": graph_mode,
             "all_versions": all_versions,
             "validate_checksum": validate_checksum,
+            "user_agent": user_agent,
             "authurl": authurl,
             "clientid": clientid,
         })
@@ -385,6 +391,7 @@ def download(
             base_uri=base_uri,
             graph_mode=graph_mode,
             validate_checksum=validate_checksum,
+            user_agent=user_agent,
             manifest_context=manifest_context,
         )
     except DownloadAuthError as e:
