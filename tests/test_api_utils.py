@@ -1,4 +1,5 @@
-from databusclient.api.utils import get_databus_id_parts_from_file_url
+import pytest
+from databusclient.api.utils import get_databus_id_parts_from_file_url, compute_sha256_and_length
 
 
 def test_split_full_url():
@@ -79,3 +80,27 @@ def test_split_too_long_keeps_first_six():
         "d",
         "e",
     )
+
+def test_sha256_hello_file(tmp_path):
+    f = tmp_path / "hello.txt"
+    f.write_text("hello")
+    result = compute_sha256_and_length(f)
+
+    assert result == (
+        "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+        5,
+    )
+
+def test_sha256_empty_file_(tmp_path):
+    f = tmp_path / "empty.txt"
+    f.write_text("")
+    result = compute_sha256_and_length(f)
+
+    assert result == (
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",0
+    )
+
+def test_sha256_missing_file_raises(tmp_path):
+    missing = tmp_path / "does_not_exist.txt"
+    with pytest.raises(FileNotFoundError):
+        compute_sha256_and_length(missing)
